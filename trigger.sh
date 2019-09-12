@@ -22,7 +22,24 @@ function createPlainBackup()
 	fi
 	
 	# TODO Add hard-linking
-	rsync $RSYNC_OPT "$src" "root@$HOST:$dst"
+	
+	links=()
+	for i in 0 1 2 3 4 5 6; do links+=("daily.$i"); done
+	for i in 0 1 2; do links+=("weekly.$i"); done
+	for i in 0 1 2 3 4 5 6 7 8 9 10 11; do links+=("monthly.$i"); done
+	
+	rsync_links=()
+	for i in "${links[@]}"
+	do
+		ssh root@$HOST "test -d $PREFIX/$i" && rsync_links+=("--link-dest=$PREFIX/$i/$2")
+	done
+	
+# 	for i in "${rsync_links[@]}"
+# 	do
+# 		rsync_links_str="$rsync_links_str"
+# 	done
+	
+	rsync $RSYNC_OPT "$src" "root@$HOST:$dst" "${rsync_links[@]}"
 }
 
 function createMountedBackup()
@@ -128,5 +145,6 @@ function process()
 }
 
 # Check connectivity
+# Check for rotation
 
 process
