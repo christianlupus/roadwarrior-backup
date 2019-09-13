@@ -1,7 +1,8 @@
 #! /bin/bash
 
-set -x
+# set -x
 
+# TODO Make the config localed unter /etc
 . `dirname "$0"`/config
 
 # Check for root
@@ -10,18 +11,25 @@ if [ `whoami` != root ]; then
 	exit 1
 fi
 
-function createPlainBackup()
+## Saves a local folderstructure on a remote backup machine
+##
+## $1 The folder in the local file system tree that should be backed up.
+## $2 The relative name on the backup server under which the backup should be saved.
+createPlainBackup()
 {
-	dst="$PREFIX/sync/$2"
-	ssh root@$HOST "mkdir -p $dst"
+	local dst="$PREFIX/sync/$2"
+	ssh root@$HOST "mkdir -p $dst" || { 
+			echo "Could not create folder $dst on $HOST. Aborting"
+			return 1
+		}
 	
-	src="$1"
+	local src="$1"
 	if ! echo "$src" | grep '/$' > /dev/null ; then
 		# Ensure src end with a slash to avoid unintended directory creation by rsync
 		src="$src/"
 	fi
 	
-	links=$(cat <<- EOF | ssh root@$HOST bash | head -n 20
+	local links=$(cat <<- EOF | ssh root@$HOST bash
 		cd '$PREFIX'
 		for i in daily.* weekly.* monthly.* yearly.*
 		do
@@ -31,61 +39,162 @@ function createPlainBackup()
 		done
 	EOF
 	)
+	ret=$?
 	
-	rsync_links=()
+	if [ $ret -ne 0 ]; then
+		echo "Could not enumerate all existing backups. Aborting."
+		return 2
+	fi
+	
+	# Take only the first 20 backups as rsync does not allow more
+	links=$(echo "$links" | head -n 20)
+	
+	local rsync_links=()
 	while read -r l
 	do
 		rsync_links+=("$l")
 	done <<< "$links"
 	
-	rsync $RSYNC_OPT "$src" "root@$HOST:$dst" "${rsync_links[@]}"
+	local add_options=()
+	
+	test -n $FUZZY && add_options+=("--fuzzy")
+	
+	rsync $RSYNC_OPT "${add_options[@]}" "$src" "root@$HOST:$dst" "${rsync_links[@]}"
+	ret=$?
+	
+	case $ret in
+		0)
+			;;
+		*)
+			echo "An error happened during the transfer. Aborting transaction."
+			return 3
+			;;
+	esac
+	
 }
 
-function createMountedBackup()
+## Mount a filesystem and creates a backup thereof on the remote server
+##
+## $1 The block decive to be backed up. Must be trivially mountable.
+## $2 The relative name on the remote backup machine.
+createMountedBackup()
 {
 	# Mountpoint
-	mnt=`mktemp -d`
+	local mnt=`mktemp -d`
 	
-	mount "$1" "$mnt" -o ro
+	mount "$1" "$mnt" -o ro || {
+			echo "Could not mount the backup. Aborting."
+			return 4
+		}
 	
-	src="$mnt"
+	local src="$mnt"
 	if [ -n "$MNT_PREFIX" ]; then
 		src="$src/$MNT_PREFIX"
 	fi
 	
 	createPlainBackup "$src" "$2"
+	local ret=$?
 	
-	umount "$mnt"
+	umount "$mnt" || {
+			echo "Umounting failed. You might need to manually umount."
+			test $ret -eq 0 && ret=5
+		}
 	rmdir "$mnt"
+	
+	return $ret
 }
 
-function createPlainLVMBackup()
+## A generic function to handle LVM based backups.
+##
+## This function first generates a snapshot of a named LV, calls a certain command and then removes the snapshot of the LV again.
+## The command is executed after snapshot creation with the first parameter the (full) name of the snapshot and any additioal (vararg) parameters to this function
+##
+## $1 The LV to be used as a basis for the snapshot
+## $2 The command to be executed
+## $3, $4, ... The additional parameters for the command
+createLVMBackup()
 {
-	lvcreate --snapshot "$1" --name $SNAPSHOTNAME --size $SNAPSHOTSIZE
-	createMountedBackup $SNAPSHOTNAME "$2"
-	lvremove -qy $SNAPSHOTNAME
+	local source="$1"
+	local command="$2"
+	shift 2
+	
+	lvcreate --snapshot "$source" --name $SNAPSHOTNAME --size $SNAPSHOTSIZE || {
+			echo "Could not create LV snapshot $SNAPSHOTNAME. Plase check manually."
+			return 6
+		}
+	
+	"$command" "$SNAPSHOTNAME" "$@"
+	local ret=$?
+	
+	lvremove -qy $SNAPSHOTNAME || {
+			echo "Removal of the snapshot was not successfull. Plase check manually."
+			test $ret -eq 0 && ret=7
+		}
+	
+	return $ret
 }
 
-function createEncryptedLVMBackup()
+## Create a backup from a LV partition that contains a single file system.
+##
+## $1 The name of the LV to be backed up
+## $2 The relative name on the remote machine
+createPlainLVMBackup()
 {
-	if [ -z "$CRYPT" ]; then
-		echo "No key for $1 was given"
-		exit 1
+	createLVMBackup "$1" createMountedBackup "$2"
+	return $?
+}
+
+## Decrypts a block device and backs up the resulting plain filesystem inside
+##
+## $1 The encrypted block device to use
+## $2 The relative path on the remote backup server to store the backup
+## $3 The name of the decrypted device (without /dev/mapper)
+## $4 The keyfile used for decryption
+createPlainEncryptedBackup()
+{
+	cryptsetup open -d "$4" "$1" "$3" || {
+			echo "Could not open the encrypted device $1 using the key $4"
+			return 8
+		}
+	
+	createMountedBackup "/dev/mapper/$3" "$2"
+	local ret=$?
+	
+	cryptsetup close "$3" || {
+			echo "Could not close the crypt device /dev/mapper/$3. Please do so manually."
+			test $ret -eq 0 && ret=9
+		}
+	
+	return $ret
+}
+
+## Backup an encrypted LV that contains a single file system using a LVM snapshot
+##
+## $1 The block device that contains the origin file system
+## $2 The relative path on the remote backup server to store the content to
+## $3 The name of the decrypted device to be used (without /dev/mapper)
+## $4 The keyfile needed to decrypt the block device
+createEncryptedLVMBackup()
+{
+	if [ -z "$4" -o ! -r "$4" ]; then
+		echo "No valid key ($4) for $1 was given"
+		return 10
 	fi
 	
-	lvcreate --snapshot "$1" --name $SNAPSHOTNAME --size $SNAPSHOTSIZE
-	cryptsetup open -d "$CRYPT" "$SNAPSHOTNAME" "$MAPPERNAME"
-	
-	createMountedBackup "/dev/mapper/$MAPPERNAME" "$2"
-	
-	cryptsetup close "$MAPPERNAME"
-	lvremove -qy $SNAPSHOTNAME
+	createLVMBackup "$1" createPlainEncryptedBackup "$2" "$3" "$4"
+	return $?
 }
 
-function parseOptions()
+## Parse the options in the backuptab file
+## This function resets all global configurations to the defaults and then sets the to-be-modified ones accordingly to the table
+##
+## $1 The source of the backing process, just for reference of a certain line in case of parsing errors
+## $2 The options as in the backuptab specified
+parseOptions()
 {
 	MNT_PREFIX=''
 	CRYPT=''
+	FUZZY='yes'
 	
 	src="$1"
 	shift
@@ -97,38 +206,53 @@ function parseOptions()
 		# Read key=value pairs
 		IFS='=' read k v <<< "$i"
 		case "$k" in
+			defaults)
+				;;
 			prefix)
 				MNT_PREFIX="$v"
 				;;
 			crypt)
 				CRYPT="$v"
 				;;
+			nofuzzy)
+				FUZZY=''
+				;;
+			fuzzy)
+				FUZZY='yes'
+				;;
 			*)
 				echo "Ignoring key $k in the options of the backup for $src"
 		esac
 		
-	done <<< "$@,"
+	done <<< "$2,"
 }
 
-function parseTabLine()
+## Parse a single line from the backuptab file
+##
+## The line is split automatically by bash's word separation.
+##
+## $1 The source of the backup
+## $2 The relative path of the backup on the remote backup machine
+## $3 The type of the source. Valid values are plain, lvm, lvm+crypt.
+## $4 Options for the backup process
+parseTabLine()
 {
-	src="$1"
-	dst="$2"
-	type="$3"
+	local src="$1"
+	local dst="$2"
+	local type="$3"
 	shift 3
 	
-	parseOptions "$src" "$@"
+	parseOptions "$src" "$4"
 	
 	case "$type" in
 		plain)
-			createPlainBackup "$src" "$dst"
+			createPlainBackup "$src" "$dst" || return $?
 			;;
 		lvm)
-			createPlainLVMBackup "$src" "$dst"
+			createPlainLVMBackup "$src" "$dst" || return $?
 			;;
 		lvm+crypt)
-			createEncryptedLVMBackup "$src" "$dst"
-			true
+			createEncryptedLVMBackup "$src" "$dst" "$SNAPSHOTNAME" "$CRYPT" || return $?
 			;;
 		*)
 			echo Unknown type found: $type
@@ -137,7 +261,11 @@ function parseTabLine()
 	esac
 }
 
-function checkFlags()
+## Check for existence of the various flag files
+##
+## If no flag files are found, the program terminates directly.
+## If flags are found, this is stored in some global variables.
+checkFlags()
 {
 	test -e "$FLAGDIR/yearly" && ENABLE_YEARLY=yes
 	test -e "$FLAGDIR/monthly" && ENABLE_MONTHLY=yes
@@ -149,17 +277,27 @@ function checkFlags()
 	fi
 }
 
-function checkConnectivity()
+## Check the connectivity to the remote backup server by opening a testing SSH connection.
+##
+## This function will terminate the execution of the script if the server cannot be reached.
+checkConnectivity()
 {
+	# TODO Redirect output to /dev/null?
 	if ! ssh root@$HOST 'true'; then
 		echo "Could not connect to server $HOST, stopping now."
 		exit 1
 	fi
 }
 
-function rotate_abstract()
+## Rotate the backups on the remote server
+##
+## This function logs into the remote server and performs a rotation of a certain level of backups.
+## 
+## $1 The name of the backups to be rotated (like monthly)
+## $2 The name of the last underlying backup (e.g. weekly.3)
+## $3 The highest index of the current backup level (e.g. 11)
+rotate_abstract()
 {
-	let red=$3-1
 	cat <<- EOF | ssh root@$HOST 'bash'
 # 	cat <<- EOF | bash
 # 		echo 'on server'
@@ -192,7 +330,7 @@ function rotate_abstract()
 		
 		if [ \$holeFound -eq 0 ]; then
 			# The sequence is complete. Remove the tail and continue.
-			mv '$1.$3' remove
+			mv '$1.$3' remove || { echo 'Could not move old backup out of the way'; exit 2; }
 			upper=$3
 		else
 			# A hole (or early ending of the sequence) was detected. Fill only the next entry/gap.
@@ -203,62 +341,85 @@ function rotate_abstract()
 		for i in \`seq \$upper -1 1\`
 		do
 			let im=\$i-1
-			mv "$1.\$im" "$1.\$i"
+			mv "$1.\$im" "$1.\$i" || { echo "Could not rotate the backup $1.\$im to $1.\$i."; exit 3; }
 		done
 		
 		# Use the underlying backup as the first one
-		mv '$2' '$1.0'
+		mv '$2' '$1.0' || { echo "Could not move the underlying backup into place."; exit 4; }
 		
 		# Eventually remove the temporary backup
 		test \$holeFound -eq 0 && rm -rf remove
+		test \$? -eq 0 || { echo "Could not permanently remove the oldest backup"; exit 5; }
 		
 # 		sleep 0.5
 	EOF
+	local ret=$?
+	
+	return $ret
 }
 
-function rotate_yearly()
+# TODO Flags loeschen oder nocht leoschen bei einem Fehler des rotierens?
+
+## Rotate the yearly backups on the server and remove flag
+rotate_yearly()
 {
 	rotate_abstract yearly monthly.11 10
-	rm "$FLAGDIR/yearly"
+	rm "$FLAGDIR/yearly" || return 11
+	return 0
 }
 
-function rotate_monthly()
+## Rotate the monthly backups on the server and remove flag
+rotate_monthly()
 {
 	rotate_abstract monthly weekly.3 11
-	rm "$FLAGDIR/monthly"
+	rm "$FLAGDIR/monthly" || return 11
+	return 0
 }
 
-function rotate_weekly()
+## Rotate the weekly backups on the server and remove flag
+rotate_weekly()
 {
 	rotate_abstract weekly daily.6 3
-	rm "$FLAGDIR/weekly"
+	rm "$FLAGDIR/weekly" || return 11
+	return 0
 }
 
-function rotate_daily()
+## Rotate the daily backups on the server and remove flag
+rotate_daily()
 {
 	rotate_abstract daily sync 6
-	rm "$FLAGDIR/daily"
+	rm "$FLAGDIR/daily" || return 11
+	return 0
 }
 
-function create_backup()
+## Create a new (complete) backup, rotate the daily backups on the server and remove flag
+## 
+## First, the lines of the backuptabs file are parsed and synchronized to the remote server.
+## Then, the intermediate backup is rotated in place into the daily chain.
+create_backup()
 {
 	cat "$BACKUPTAB" | sed 's@#.*@@;s@^[ \t]*$@@;/^$/d' | while read line
 	do
-		parseTabLine $line
+		parseTabLine $line || return $?
 	done
 	
 	rotate_daily
+	return $?
 }
 
-
-function finish()
+## Remove the lock file on termination of the script
+## 
+## This must not be called if the lock could not be aquired.
+## Oterwise, we could steal the file and on next invocation the lock is no longer visible.
+finish()
 {
-	rm -f /tmp/backup.lock
+	rm -f $LOCK_FILE
 }
 
-exec {flock_id}> /tmp/backup.lock
+# Try to get the lock on a certain file
+exec {flock_id}> $LOCK_FILE
 flock -n ${flock_id}
-ret=$?
+local ret=$?
 
 if [ $ret -ne 0 ]; then
 	# TODO exit 0 or 1?
@@ -268,7 +429,9 @@ fi
 # Enable the trap only after the check of the lock is finished. Otherwise some nasty effects might happen every even time, when removing a file (with active lock) while backup is still running...
 trap finish EXIT
 
+# Check if we have to do anything. This function will terminate the script in case of nothing has to be done.
 checkFlags
+
 checkConnectivity
 
 test -n "$ENABLE_YEARLY" && rotate_yearly
@@ -276,6 +439,6 @@ test -n "$ENABLE_MONTHLY" && rotate_monthly
 test -n "$ENABLE_WEEKLY" && rotate_weekly
 test -n "$ENABLE_DAILY" && create_backup
 
-# process
-
 flock -u $flock_id
+
+# TODO Make MAPPERNAME generic and not VG dependent
