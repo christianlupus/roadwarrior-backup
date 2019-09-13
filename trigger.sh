@@ -21,18 +21,22 @@ function createPlainBackup()
 		src="$src/"
 	fi
 	
-	# TODO Add hard-linking
-	
-	links=()
-	for i in 0 1 2 3 4 5 6; do links+=("daily.$i"); done
-	for i in 0 1 2; do links+=("weekly.$i"); done
-	for i in 0 1 2 3 4 5 6 7 8 9 10 11; do links+=("monthly.$i"); done
+	links=$(cat <<- EOF | ssh root@$HOST bash | head -n 20
+		cd '$PREFIX'
+		for i in daily.* weekly.* monthly.* yearly.*
+		do
+			if [ -d "\$i" ]; then
+				echo "--link-dest=$PREFIX/\$i/$2"
+			fi
+		done
+	EOF
+	)
 	
 	rsync_links=()
-	for i in "${links[@]}"
+	while read -r l
 	do
-		ssh root@$HOST "test -d $PREFIX/$i" && rsync_links+=("--link-dest=$PREFIX/$i/$2")
-	done
+		rsync_links+=("$l")
+	done <<< "$links"
 	
 	rsync $RSYNC_OPT "$src" "root@$HOST:$dst" "${rsync_links[@]}"
 }
@@ -261,20 +265,17 @@ if [ $ret -ne 0 ]; then
 	exit 0
 fi
 
-# Enable the trap only after the check of the lock is finished. Otherwise some nasty effects might happen every even time...
+# Enable the trap only after the check of the lock is finished. Otherwise some nasty effects might happen every even time, when removing a file (with active lock) while backup is still running...
 trap finish EXIT
 
 checkFlags
-# checkConnectivity
+checkConnectivity
 
 test -n "$ENABLE_YEARLY" && rotate_yearly
 test -n "$ENABLE_MONTHLY" && rotate_monthly
 test -n "$ENABLE_WEEKLY" && rotate_weekly
 test -n "$ENABLE_DAILY" && create_backup
 
-# Check for rotation
-
 # process
 
 flock -u $flock_id
-# rm /tmp/backup.lock
