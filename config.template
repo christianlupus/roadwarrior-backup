@@ -1,0 +1,27 @@
+
+# The location of the backup table
+BACKUPTAB=/etc/roadwarrior-backup/backuptab
+
+# The full name of the remote host to push the backups to
+HOST=host.example.com
+
+# The prefix under which all backups on the server are going to be located.
+PREFIX=/backup/test
+
+# The options for rsync during the transfer of the data
+RSYNC_OPT="--partial --partial-dir=.rsync-dir -az --numeric-ids --delete --delete-delay --one-file-system"
+
+# (Only LVM) The name of the snapshot to be used for and LVM based backup
+SNAPSHOTNAME=/dev/system/backup-snap
+
+# (Only LVM) The size of the generated snapshot
+SNAPSHOTSIZE=5G
+
+# (Only encryption) The name of the decrypted block device during the backup
+MAPPERNAME=backup-decrypted
+
+# The absolute path of a auxilary folder that holds the relevant backup flags
+FLAGDIR=/var/lib/roadwarrior-backup/flags
+
+# The path of the lock file
+LOCK_FILE=/var/lib/roadwarrior-backup/lock
