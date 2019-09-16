@@ -60,7 +60,7 @@ createPlainBackup()
 	local rsync_links=()
 	while read -r l
 	do
-		rsync_links+=("$l")
+		test -n "$l" && rsync_links+=("$l")
 	done <<< "$links"
 	
 	local add_options=()
@@ -428,6 +428,8 @@ rotate_daily()
 ## Then, the intermediate backup is rotated in place into the daily chain.
 create_backup()
 {
+	local line
+	
 	cat "$BACKUPTAB" | sed 's@#.*@@;s@^[ \t]*$@@;/^$/d' | while read line
 	do
 		parseTabLine $line || return $?
