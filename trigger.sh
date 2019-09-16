@@ -2,8 +2,16 @@
 
 # set -x
 
-# TODO Make the config localed unter /etc
-. `dirname "$0"`/config
+CONFIG_PATH=/etc/roadwarrior-backup/config
+
+if [ ! -r $CONFIG_PATH ]; then
+	echo "Could not read path $CONFIG_PATH"
+	exit 1
+fi
+
+#. `dirname "$0"`/config
+. "$CONFIG_PATH"
+
 
 # Check for root
 if [ `whoami` != root ]; then
