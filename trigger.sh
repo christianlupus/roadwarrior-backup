@@ -224,7 +224,7 @@ parseOptions()
 				echo "Ignoring key $k in the options of the backup for $src"
 		esac
 		
-	done <<< "$2,"
+	done <<< "$1,"
 }
 
 ## Parse a single line from the backuptab file
@@ -242,7 +242,7 @@ parseTabLine()
 	local type="$3"
 	shift 3
 	
-	parseOptions "$src" "$4"
+	parseOptions "$src" "$1"
 	
 	case "$type" in
 		plain)
@@ -282,8 +282,7 @@ checkFlags()
 ## This function will terminate the execution of the script if the server cannot be reached.
 checkConnectivity()
 {
-	# TODO Redirect output to /dev/null?
-	if ! ssh root@$HOST 'true'; then
+	if ! ssh root@$HOST 'true' > /dev/null 2>&1; then
 		echo "Could not connect to server $HOST, stopping now."
 		exit 1
 	fi
@@ -348,22 +347,30 @@ rotate_abstract()
 		mv '$2' '$1.0' || { echo "Could not move the underlying backup into place."; exit 4; }
 		
 		# Eventually remove the temporary backup
-		test \$holeFound -eq 0 && rm -rf remove
-		test \$? -eq 0 || { echo "Could not permanently remove the oldest backup"; exit 5; }
+		if [ \$holeFound -eq 0 ]; then
+			rm -rf remove || { echo "Could not permanently remove the oldest backup"; exit 5; }
+		fi
 		
 # 		sleep 0.5
 	EOF
 	local ret=$?
 	
-	return $ret
+	case $ret in
+		1)
+			return 0
+			;;
+		*)
+			return $ret
+			;;
+	esac
 }
-
-# TODO Flags loeschen oder nocht leoschen bei einem Fehler des rotierens?
 
 ## Rotate the yearly backups on the server and remove flag
 rotate_yearly()
 {
-	rotate_abstract yearly monthly.11 10
+	test -z "$ENABLE_YEARLY" && return 0
+	
+	rotate_abstract yearly monthly.11 10 || return $?
 	rm "$FLAGDIR/yearly" || return 11
 	return 0
 }
@@ -371,7 +378,9 @@ rotate_yearly()
 ## Rotate the monthly backups on the server and remove flag
 rotate_monthly()
 {
-	rotate_abstract monthly weekly.3 11
+	test -z "$ENABLE_MONTHLY" && return 0
+	
+	rotate_abstract monthly weekly.3 11 || return $?
 	rm "$FLAGDIR/monthly" || return 11
 	return 0
 }
@@ -379,7 +388,9 @@ rotate_monthly()
 ## Rotate the weekly backups on the server and remove flag
 rotate_weekly()
 {
-	rotate_abstract weekly daily.6 3
+	test -z "$ENABLE_WEEKLY" && return 0
+	
+	rotate_abstract weekly daily.6 3 || return $?
 	rm "$FLAGDIR/weekly" || return 11
 	return 0
 }
@@ -387,7 +398,9 @@ rotate_weekly()
 ## Rotate the daily backups on the server and remove flag
 rotate_daily()
 {
-	rotate_abstract daily sync 6
+	test -z "$ENABLE_DAILY" && return 0
+	
+	rotate_abstract daily sync 6 || return $?
 	rm "$FLAGDIR/daily" || return 11
 	return 0
 }
@@ -419,7 +432,7 @@ finish()
 # Try to get the lock on a certain file
 exec {flock_id}> $LOCK_FILE
 flock -n ${flock_id}
-local ret=$?
+ret=$?
 
 if [ $ret -ne 0 ]; then
 	# TODO exit 0 or 1?
@@ -434,10 +447,8 @@ checkFlags
 
 checkConnectivity
 
-test -n "$ENABLE_YEARLY" && rotate_yearly
-test -n "$ENABLE_MONTHLY" && rotate_monthly
-test -n "$ENABLE_WEEKLY" && rotate_weekly
-test -n "$ENABLE_DAILY" && create_backup
+# Do the rotations and abort in case anything goes wrong
+rotate_yearly && rotate_monthly && rotate_weekly && create_backup || echo "Problem found during sync process."
 
 flock -u $flock_id
 
