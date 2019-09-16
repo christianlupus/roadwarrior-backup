@@ -41,7 +41,7 @@ createPlainBackup()
 		cd '$PREFIX'
 		for i in daily.* weekly.* monthly.* yearly.*
 		do
-			if [ -d "\$i" ]; then
+			if [ -d "\$i" -a -d "\$i/$2" ]; then
 				echo "--link-dest=$PREFIX/\$i/$2"
 			fi
 		done
