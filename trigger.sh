@@ -67,7 +67,7 @@ createPlainBackup()
 	
 	test -n $FUZZY && add_options+=("--fuzzy")
 	
-	rsync $RSYNC_OPT "${add_options[@]}" "$src" "root@$HOST:$dst" "${rsync_links[@]}"
+	rsync $RSYNC_OPT "${add_options[@]}" "${rsync_links[@]}" "$src" "root@$HOST:$dst"
 	ret=$?
 	
 	case $ret in
@@ -217,6 +217,8 @@ parseOptions()
 	# Split the options by comma
 	while read -d, i
 	do
+		
+		test -z "$i" && continue
 		
 		# Read key=value pairs
 		IFS='=' read k v <<< "$i"
