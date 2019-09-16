@@ -26,9 +26,9 @@ fi
 createPlainBackup()
 {
 	local dst="$PREFIX/sync/$2"
-	ssh root@$HOST "mkdir -p $dst" || { 
-			echo "Could not create folder $dst on $HOST. Aborting"
-			return 1
+	ssh root@$HOST "mkdir -p $dst" < /dev/null || {
+			echo "Could not create folder $dst on $HOST. Aborting";
+			return 1;
 		}
 	
 	local src="$1"
@@ -37,7 +37,7 @@ createPlainBackup()
 		src="$src/"
 	fi
 	
-	local links=$(cat <<- EOF | ssh root@$HOST bash
+	local links=$(ssh root@$HOST bash <<- EOF
 		cd '$PREFIX'
 		for i in daily.* weekly.* monthly.* yearly.*
 		do
@@ -299,7 +299,7 @@ checkFlags()
 ## This function will terminate the execution of the script if the server cannot be reached.
 checkConnectivity()
 {
-	if ! ssh root@$HOST 'true' > /dev/null 2>&1; then
+	if ! ssh root@$HOST 'true' < /dev/null > /dev/null 2>&1; then
 		echo "Could not connect to server $HOST, stopping now."
 		exit 1
 	fi
@@ -314,7 +314,7 @@ checkConnectivity()
 ## $3 The highest index of the current backup level (e.g. 11)
 rotate_abstract()
 {
-	cat <<- EOF | ssh root@$HOST 'bash'
+	ssh root@$HOST 'bash' <<- EOF
 # 	cat <<- EOF | bash
 # 		echo 'on server'
 		
