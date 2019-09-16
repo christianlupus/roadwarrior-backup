@@ -12,7 +12,7 @@ PREFIX=/backup/test
 RSYNC_OPT="--partial --partial-dir=.rsync-dir -az --numeric-ids --delete --delete-delay --one-file-system"
 
 # (Only LVM) The name of the snapshot to be used for and LVM based backup
-SNAPSHOTNAME=/dev/system/backup-snap
+SNAPSHOTNAME=backup-snap
 
 # (Only LVM) The size of the generated snapshot
 SNAPSHOTSIZE=5G

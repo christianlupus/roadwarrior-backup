@@ -126,15 +126,22 @@ createLVMBackup()
 	local command="$2"
 	shift 2
 	
-	lvcreate --snapshot "$source" --name $SNAPSHOTNAME --size $SNAPSHOTSIZE || {
-			echo "Could not create LV snapshot $SNAPSHOTNAME. Plase check manually."
+	# Strip leading /dev/ from source if existent
+	if echo "$source" | grep '^/dev/' > /dev/null; then
+		source=`echo "$source" | sed 's@^/dev/@@'`
+	fi
+	
+	local vgname=`echo "$source" | cut -d/ -f1`
+	
+	lvcreate --snapshot "$source" --name $SNAPSHOTNAME --size $SNAPSHOTSIZE -qq 3>&- || {
+			echo "Could not create LV snapshot $SNAPSHOTNAME for LV $source. Plase check manually."
 			return 6
 		}
 	
-	"$command" "$SNAPSHOTNAME" "$@"
+	"$command" "/dev/$vgname/$SNAPSHOTNAME" "$@"
 	local ret=$?
 	
-	lvremove -qy $SNAPSHOTNAME || {
+	lvremove -qy "$vgname/$SNAPSHOTNAME" -q 3>&- || {
 			echo "Removal of the snapshot was not successfull. Plase check manually."
 			test $ret -eq 0 && ret=7
 		}
@@ -438,8 +445,8 @@ finish()
 }
 
 # Try to get the lock on a certain file
-exec {flock_id}> $LOCK_FILE
-flock -n ${flock_id}
+exec 3> $LOCK_FILE
+flock -n 3
 ret=$?
 
 if [ $ret -ne 0 ]; then
@@ -458,6 +465,4 @@ checkConnectivity
 # Do the rotations and abort in case anything goes wrong
 rotate_yearly && rotate_monthly && rotate_weekly && create_backup || echo "Problem found during sync process."
 
-flock -u $flock_id
-
-# TODO Make MAPPERNAME generic and not VG dependent
+flock -u 3
