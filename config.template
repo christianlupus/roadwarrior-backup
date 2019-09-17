@@ -9,7 +9,8 @@ HOST=host.example.com
 PREFIX=/backup/test
 
 # The options for rsync during the transfer of the data
-RSYNC_OPT="--partial --partial-dir=.rsync-dir -az --numeric-ids --delete --delete-delay --one-file-system"
+RSYNC_OPT="--partial --partial-dir=.rsync-dir -az --numeric-ids --delete --delete-excluded --delete-delay --one-file-system"
+# You might want to add e.g. -F for per directory filtering
 
 # (Only LVM) The name of the snapshot to be used for and LVM based backup
 SNAPSHOTNAME=backup-snap
