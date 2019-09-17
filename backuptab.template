@@ -1,0 +1,14 @@
+
+# Source                        Path on backup machine              Type            Options
+#
+# Examples:
+#
+# Backup /etc to the folder /prefix/path/daily.x/etc on the backup machine
+# /etc                          /etc                                plain
+#
+# Backup the LVM partition /dev/system/home to /prefix/path/daily.x/home on the backup machine using a snapshot
+# system/home                   /home                               lvm
+#
+# Backup the folder images from the encrypted LVM partition /dev/system/data to /prefix/path/daily.x/images using the key file /key/data.key
+# system/data                   /images                             lvm+crypt       crypt=/key/data.key,prefix=images
+
