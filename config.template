@@ -3,7 +3,7 @@
 BACKUPTAB=/etc/roadwarrior-backup/backuptab
 
 # The full name of the remote host to push the backups to
-HOST=host.example.com
+HOST=hh.wolf-stuttgart.net
 
 # The prefix under which all backups on the server are going to be located.
 PREFIX=/backup/test
@@ -16,7 +16,7 @@ RSYNC_OPT="--partial --partial-dir=.rsync-dir -az --numeric-ids --delete --delet
 SNAPSHOTNAME=backup-snap
 
 # (Only LVM) The size of the generated snapshot
-SNAPSHOTSIZE=5G
+SNAPSHOTSIZE=1G
 
 # (Only encryption) The name of the decrypted block device during the backup
 MAPPERNAME=backup-decrypted
