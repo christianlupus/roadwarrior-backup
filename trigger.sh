@@ -58,7 +58,7 @@ createPlainBackup()
 	links=$(echo "$links" | head -n 20)
 	
 	local rsync_links=()
-	while read -r l
+	while read l
 	do
 		test -n "$l" && rsync_links+=("$l")
 	done <<< "$links"
@@ -66,6 +66,8 @@ createPlainBackup()
 	local add_options=()
 	
 	test -n $FUZZY && add_options+=("--fuzzy")
+	
+	#echo "Num Links: ${#rsync_links[@]}"
 	
 	rsync $RSYNC_OPT "${add_options[@]}" "${rsync_links[@]}" "$src" "root@$HOST:$dst"
 	ret=$?
@@ -432,7 +434,9 @@ create_backup()
 	
 	cat "$BACKUPTAB" | sed 's@#.*@@;s@^[ \t]*$@@;/^$/d' | while read line
 	do
+# 		echo "$line"
 		parseTabLine $line || return $?
+# 		echo "Line done: $line"
 	done
 	
 	rotate_daily
