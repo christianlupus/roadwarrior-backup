@@ -133,7 +133,7 @@ createLVMBackup()
 	
 	local vgname=`echo "$source" | cut -d/ -f1`
 	
-	lvcreate --snapshot "$source" --name $SNAPSHOTNAME --size $SNAPSHOTSIZE -qq 3>&- || {
+	lvcreate --snapshot "$source" --name $SNAPSHOTNAME --size $SNAPSHOTSIZE -qq {flock_id}>&- || {
 			echo "Could not create LV snapshot $SNAPSHOTNAME for LV $source. Plase check manually."
 			return 6
 		}
@@ -141,7 +141,7 @@ createLVMBackup()
 	"$command" "/dev/$vgname/$SNAPSHOTNAME" "$@"
 	local ret=$?
 	
-	lvremove -qy "$vgname/$SNAPSHOTNAME" -q 3>&- || {
+	lvremove -qy "$vgname/$SNAPSHOTNAME" -q {flock_id}>&- || {
 			echo "Removal of the snapshot was not successfull. Plase check manually."
 			test $ret -eq 0 && ret=7
 		}
@@ -449,8 +449,8 @@ finish()
 }
 
 # Try to get the lock on a certain file
-exec 3> $LOCK_FILE
-flock -n 3
+exec {flock_id}> $LOCK_FILE
+flock -n ${flock_id}
 ret=$?
 
 if [ $ret -ne 0 ]; then
@@ -469,4 +469,4 @@ checkConnectivity
 # Do the rotations and abort in case anything goes wrong
 rotate_yearly && rotate_monthly && rotate_weekly && create_backup || echo "Problem found during sync process."
 
-flock -u 3
+flock -u ${flock_id}
