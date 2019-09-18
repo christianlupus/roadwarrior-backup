@@ -85,6 +85,15 @@ The fourth column contains additional parameters for the backup location in form
 | fuzzy | any | Enable fuzzy transfer of files (see `man rsync`). |
 | nofuzzy | any | Disable fuzzy transfer of files (see `man rsync`). |
 
+### Enable key based SSH access
+
+The backup solution is based on the use of SSH.
+You need to setup key based authentication.
+Simply put the content of `/root/.ssh/id_rsa.pub` on the laptop at the end of `/root/.ssh/authorized_keys` on the backup machine.
+For further questions see your favorite search engine of the internet ;-).
+
+Verify that you can log into your backup server using `ssh $HOSTNAME` from your laptop as user root, while replacing `$HOSTNAME` with the address of your backup machine.
+
 ### Creating the first (full) backup
 
 After configuration, it is suggested that you create a first daily backup.

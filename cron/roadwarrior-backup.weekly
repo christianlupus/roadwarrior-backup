@@ -1,0 +1,3 @@
+#!/bin/sh
+
+/usr/local/sbin/roadwarrior-backup-flag.sh -w
