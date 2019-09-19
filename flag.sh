@@ -62,7 +62,7 @@ enable_yearly() {
 }
 
 reset_locks() {
-	rm "$FLAGDIR/"{daily,weekly,monthly,yearly}
+	rm -f "$FLAGDIR/"{daily,weekly,monthly,yearly}
 }
 
 assert_no_reset()
@@ -153,3 +153,4 @@ test -n "$ENABLE_WEEKLY" && enable_weekly
 test -n "$ENABLE_MONTHLY" && enable_monthly
 test -n "$ENABLE_YEARLY" && enable_yearly
 test -n "$RESET_LOCKS" && reset_locks
+exit 0
