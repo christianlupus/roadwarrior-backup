@@ -376,6 +376,9 @@ rotate_abstract()
 	local ret=$?
 	
 	case $ret in
+		0)
+			return 0
+			;;
 		1)
 			return 12
 			;;
