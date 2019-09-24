@@ -377,10 +377,10 @@ rotate_abstract()
 	
 	case $ret in
 		1)
-			return 0
+			return 12
 			;;
 		*)
-			return $ret
+			return 2$ret
 			;;
 	esac
 }
@@ -420,6 +420,8 @@ rotate_daily()
 {
 	test -z "$ENABLE_DAILY" && return 0
 	
+	create_backup || return $?
+	
 	rotate_abstract daily sync 6 || return $?
 	rm "$FLAGDIR/daily" || return 11
 	return 0
@@ -440,8 +442,7 @@ create_backup()
 # 		echo "Line done: $line"
 	done
 	
-	rotate_daily
-	return $?
+	return 0
 }
 
 ## Remove the lock file on termination of the script
@@ -472,6 +473,6 @@ checkFlags
 checkConnectivity
 
 # Do the rotations and abort in case anything goes wrong
-rotate_yearly && rotate_monthly && rotate_weekly && create_backup || echo "Problem found during sync process."
+rotate_yearly && rotate_monthly && rotate_weekly && rotate_daily || echo "Problem found during sync process."
 
 flock -u ${flock_id}
