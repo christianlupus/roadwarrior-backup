@@ -315,6 +315,7 @@ checkConnectivity()
 ## $1 The name of the backups to be rotated (like monthly)
 ## $2 The name of the last underlying backup (e.g. weekly.3)
 ## $3 The highest index of the current backup level (e.g. 11)
+## $4 The flag file that should be deleted on success.
 rotate_abstract()
 {
 	ssh root@$HOST 'bash' <<- EOF
@@ -377,9 +378,11 @@ rotate_abstract()
 	
 	case $ret in
 		0)
+			rm "$4" || return 11
 			return 0
 			;;
 		1)
+			rm "$4" || return 13
 			return 12
 			;;
 		*)
@@ -393,9 +396,8 @@ rotate_yearly()
 {
 	test -z "$ENABLE_YEARLY" && return 0
 	
-	rotate_abstract yearly monthly.11 10 || return $?
-	rm "$FLAGDIR/yearly" || return 11
-	return 0
+	rotate_abstract yearly monthly.11 10 "$FLAGDIR/yearly"
+	return $?
 }
 
 ## Rotate the monthly backups on the server and remove flag
@@ -403,9 +405,8 @@ rotate_monthly()
 {
 	test -z "$ENABLE_MONTHLY" && return 0
 	
-	rotate_abstract monthly weekly.3 11 || return $?
-	rm "$FLAGDIR/monthly" || return 11
-	return 0
+	rotate_abstract monthly weekly.3 11 "$FLAGDIR/monthly"
+	return $?
 }
 
 ## Rotate the weekly backups on the server and remove flag
@@ -413,9 +414,8 @@ rotate_weekly()
 {
 	test -z "$ENABLE_WEEKLY" && return 0
 	
-	rotate_abstract weekly daily.6 3 || return $?
-	rm "$FLAGDIR/weekly" || return 11
-	return 0
+	rotate_abstract weekly daily.6 3 "$FLAGDIR/weekly"
+	return $?
 }
 
 ## Rotate the daily backups on the server and remove flag
@@ -425,9 +425,8 @@ rotate_daily()
 	
 	create_backup || return $?
 	
-	rotate_abstract daily sync 6 || return $?
-	rm "$FLAGDIR/daily" || return 11
-	return 0
+	rotate_abstract daily sync 6 "$FLAGDIR/daily"
+	return $?
 }
 
 ## Create a new (complete) backup, rotate the daily backups on the server and remove flag
