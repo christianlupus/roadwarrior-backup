@@ -443,8 +443,9 @@ create_backup()
 		parseTabLine $line || return $?
 # 		echo "Line done: $line"
 	done
+	ret=$?
 	
-	return 0
+	return $ret
 }
 
 ## Remove the lock file on termination of the script
@@ -473,6 +474,8 @@ trap finish EXIT
 checkFlags
 
 checkConnectivity
+
+set -x
 
 # Do the rotations and abort in case anything goes wrong
 rotate_yearly && rotate_monthly && rotate_weekly && rotate_daily || echo "Problem found during sync process."
